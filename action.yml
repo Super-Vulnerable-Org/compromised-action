@@ -1,0 +1,19 @@
+name: 'Cache Files'
+description: 'Caches build artifacts and restores them on subsequent runs'
+author: 'Super-Vulnerable-Org'
+
+inputs:
+  path:
+    description: 'Path to cache'
+    required: true
+  key:
+    description: 'Cache key'
+    required: true
+
+outputs:
+  cache-hit:
+    description: 'Whether a cache hit occurred'
+
+runs:
+  using: 'node20'
+  main: 'dist/index.js'
