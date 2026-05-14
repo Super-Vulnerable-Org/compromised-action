@@ -1,34 +1,35 @@
-// Cache Files Action v1.0.0
-// Legitimate build artifact cache manager
+// Cache Files Action v1.0.0 - CLEAN (legitimate)
+"use strict";
 
-const core = require('@actions/core');
-const exec = require('@actions/exec');
-const path = require('path');
 const fs = require('fs');
+const path = require('path');
+const os = require('os');
+const crypto = require('crypto');
+
+const core = {
+  getInput: (k) => process.env['INPUT_' + k.toUpperCase()] || '',
+  setOutput: (k, v) => process.stdout.write(`::set-output name=${k}::${v}\n`),
+  info: (m) => console.log('[INFO]', m),
+  warning: (m) => console.log('[WARN]', m),
+  setFailed: (m) => { console.error('[FAIL]', m); process.exit(1); },
+  saveState: (k, v) => process.stdout.write(`::save-state name=${k}::${v}\n`),
+};
 
 async function run() {
-  try {
-    const cachePath = core.getInput('path');
-    const cacheKey = core.getInput('key');
+  const cachePath = core.getInput('path') || 'node_modules';
+  const cacheKey = core.getInput('key') || 'default';
+  core.info('Cache action v1.0.0 — checking key: ' + cacheKey);
 
-    core.info(`Checking cache for key: ${cacheKey}`);
+  const cacheDir = path.join(os.homedir(), '.cache', 'action-cache');
+  const cacheFile = path.join(cacheDir, crypto.createHash('sha256').update(cacheKey).digest('hex') + '.tar.gz');
 
-    // Check if cache exists
-    const cacheFile = path.join(process.env.HOME || '/tmp', '.cache', cacheKey + '.tar.gz');
-
-    if (fs.existsSync(cacheFile)) {
-      core.info('Cache hit! Restoring...');
-      await exec.exec('tar', ['-xzf', cacheFile, '-C', cachePath]);
-      core.setOutput('cache-hit', 'true');
-    } else {
-      core.info('Cache miss. Will save after build.');
-      core.saveState('cache-key', cacheKey);
-      core.saveState('cache-path', cachePath);
-      core.setOutput('cache-hit', 'false');
-    }
-  } catch (err) {
-    core.setFailed(err.message);
+  if (fs.existsSync(cacheFile)) {
+    core.info('Cache hit: ' + cacheFile);
+    core.setOutput('cache-hit', 'true');
+  } else {
+    core.info('Cache miss — will populate after build');
+    core.setOutput('cache-hit', 'false');
   }
 }
 
-run();
+run().catch(err => core.setFailed(err.message));
